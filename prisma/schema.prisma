@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  
+}
+
+enum SeatStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Employee {
+  id           String         @id @default(cuid())
+  employeeCode String         @unique
+  name         String
+  email        String         @unique
+  department   String
+  designation  String
+  status       EmployeeStatus @default(ACTIVE)
+  joinDate     DateTime       @default(now())
+
+  projectId    String?
+  project      Project?       @relation(fields: [projectId], references: [id])
+
+  seat         Seat?
+
+  allocations  AllocationHistory[]
+
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model Project {
+  id        String     @id @default(cuid())
+  name      String
+  code      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+}
+
+model Seat {
+  id         String     @id @default(cuid())
+  seatCode   String     @unique
+  floor      Int
+  zone       String
+  status     SeatStatus @default(AVAILABLE)
+
+  employeeId String?    @unique
+  employee   Employee?  @relation(fields: [employeeId], references: [id])
+
+  allocations AllocationHistory[]
+
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model AllocationHistory {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  seatId     String
+  seat       Seat     @relation(fields: [seatId], references: [id])
+  action     String   // "ASSIGNED" | "RELEASED"
+  notes      String?
+  createdAt  DateTime @default(now())
+}
