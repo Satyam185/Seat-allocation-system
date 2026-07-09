@@ -13,7 +13,7 @@ MVP full-stack app for managing seat allocation and project mapping for ~5,000 e
 
 ## Live Links
 - **Frontend/Backend:** https://seat-allocation-system-seven.vercel.app/
-- **GitHub:** [Insert Repository URL]
+- **GitHub:** https://github.com/Satyam185/Seat-allocation-system.git
 
 ## Setup Instructions
 1. `npm install`
