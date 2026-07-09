@@ -49,7 +49,7 @@ interface Employee {
   department: string;
   designation: string;
   status: "ACTIVE" | "INACTIVE";
-  project: { name: string; code: string } | null;
+  project: { id: string; name: string; code: string } | null;
   seat: {
     id: string;
     seatCode: string;
@@ -191,6 +191,14 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
   const [availableSeats, setAvailableSeats] = useState<any[]>([]);
   const [loadingSeats, setLoadingSeats] = useState(false);
 
+  // Project Assignment Modal State
+  const [assigningProjectEmp, setAssigningProjectEmp] = useState<Employee | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [isProjectSubmitPending, setIsProjectSubmitPending] = useState(false);
+  const [projectsList, setProjectsList] = useState<any[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [projectModalError, setProjectModalError] = useState("");
+
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
@@ -277,6 +285,63 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
       setModalError(err.message || "An error occurred during assignment.");
     } finally {
       setIsSubmitPending(false);
+    }
+  };
+
+  const handleStartProjectAssign = async (emp: Employee) => {
+    setAssigningProjectEmp(emp);
+    setProjectModalError("");
+    setSelectedProjectId(emp.project?.id || "none");
+
+    // Fetch available projects
+    setLoadingProjects(true);
+    try {
+      const res = await fetch("/api/projects?limit=1000");
+      if (res.ok) {
+        const json = await res.json();
+        let fetchedProjects = json.data || [];
+
+        // Ensure the currently assigned project is in the list
+        if (emp.project && !fetchedProjects.find((p: any) => p.id === emp.project!.id)) {
+          fetchedProjects = [emp.project, ...fetchedProjects];
+        }
+
+        setProjectsList(fetchedProjects);
+      }
+    } catch (err) {
+      console.error("Failed to load projects", err);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  const handleConfirmProjectAssign = async () => {
+    if (!assigningProjectEmp) return;
+
+    setIsProjectSubmitPending(true);
+    setProjectModalError("");
+
+    try {
+      const res = await fetch(`/api/employees/${assigningProjectEmp.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: selectedProjectId === "none" ? null : selectedProjectId,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to assign project");
+      }
+
+      setAssigningProjectEmp(null);
+      mutate(); // Trigger list reload
+      onSuccess?.(); // Trigger aggregation refresh
+    } catch (err: any) {
+      setProjectModalError(err.message || "An error occurred during project assignment.");
+    } finally {
+      setIsProjectSubmitPending(false);
     }
   };
 
@@ -464,27 +529,36 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
                     {canEdit && (
                       <TableCell className="text-right">
                         {isRealEmployee && (
-                          emp.seat ? (
+                          <div className="flex justify-end gap-2">
+                            {emp.seat ? (
+                              <Button
+                                id={`release-seat-${emp.id}`}
+                                variant="ghost"
+                                size="xs"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => handleRelease(emp)}
+                              >
+                                Release Seat
+                              </Button>
+                            ) : (
+                              <Button
+                                id={`assign-seat-btn-${emp.id}`}
+                                variant="outline"
+                                size="xs"
+                                className="text-primary border-primary/20 hover:bg-primary/5"
+                                onClick={() => handleStartAssign(emp)}
+                              >
+                                Assign Seat
+                              </Button>
+                            )}
                             <Button
-                              id={`release-seat-${emp.id}`}
-                              variant="ghost"
-                              size="xs"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => handleRelease(emp)}
-                            >
-                              Release
-                            </Button>
-                          ) : (
-                            <Button
-                              id={`assign-seat-btn-${emp.id}`}
                               variant="outline"
                               size="xs"
-                              className="text-primary border-primary/20 hover:bg-primary/5"
-                              onClick={() => handleStartAssign(emp)}
+                              onClick={() => handleStartProjectAssign(emp)}
                             >
-                              Assign Seat
+                              {emp.project ? "Change Project" : "Assign Project"}
                             </Button>
-                          )
+                          </div>
                         )}
                       </TableCell>
                     )}
@@ -635,6 +709,83 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
                 </>
               ) : (
                 "Assign Seat"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Project Dialog */}
+      <Dialog
+        open={!!assigningProjectEmp}
+        onOpenChange={(open) => !open && setAssigningProjectEmp(null)}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Assign Project</DialogTitle>
+            <DialogDescription>
+              Assign a project to{" "}
+              <span className="font-semibold text-foreground">
+                {assigningProjectEmp?.name}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          {projectModalError && (
+            <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
+              {projectModalError}
+            </div>
+          )}
+
+          {loadingProjects ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground">
+              <Loader2 className="size-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Select Project</Label>
+                <Select
+                  value={selectedProjectId || "none"}
+                  onValueChange={setSelectedProjectId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a project">
+                      {(value: string) => {
+                        if (value === "none") return "None (Unassign Project)";
+                        const project = projectsList.find((p: any) => p.id === value);
+                        return project ? `${project.code} - ${project.name}` : undefined;
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none" className="text-muted-foreground italic">
+                      None (Unassign Project)
+                    </SelectItem>
+                    {projectsList.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {`${p.code} - ${p.name}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter showCloseButton>
+            <Button
+              id="confirm-project-assign-btn"
+              onClick={handleConfirmProjectAssign}
+              disabled={isProjectSubmitPending || !selectedProjectId}
+            >
+              {isProjectSubmitPending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2" />
+                  Assigning…
+                </>
+              ) : (
+                "Save Changes"
               )}
             </Button>
           </DialogFooter>

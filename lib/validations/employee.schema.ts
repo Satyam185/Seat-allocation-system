@@ -6,7 +6,7 @@ export const createEmployeeSchema = z.object({
   email: z.string().email(),
   department: z.string().min(1),
   designation: z.string().min(1),
-  projectId: z.string().cuid().optional(),
+  projectId: z.string().cuid().nullable().optional(),
 });
 
 export const updateEmployeeSchema = createEmployeeSchema.partial();
