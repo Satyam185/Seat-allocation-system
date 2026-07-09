@@ -96,8 +96,9 @@ Environment variables configured in Vercel:
 - `GROQ_API_KEY` (For the AI search functionality)
 
 ## Screenshots
-*(Add screenshots of the live application below)*
 - Dashboard Overview
+  <img width="1902" height="930" alt="ADMIN Page" src="https://github.com/user-attachments/assets/09fdaea8-700b-4590-84d0-3f68009d7c58" />
 - Employee & Seat Table
-- AI Query Results
+  <img width="1901" height="927" alt="Employeedetail1" src="https://github.com/user-attachments/assets/33d059d5-2fa7-40c7-9cf2-a7cc9537461a" />
 - New Joiner Form
+  <img width="1918" height="928" alt="New Joiner Page" src="https://github.com/user-attachments/assets/20145a3c-ce4c-42d1-9ccb-d11e61cf2067" />
