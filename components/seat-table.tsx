@@ -747,7 +747,7 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
                 <Label>Select Project</Label>
                 <Select
                   value={selectedProjectId || "none"}
-                  onValueChange={(value) => setSelectedProjectId(value)}
+                  onValueChange={(value) => setSelectedProjectId(value ?? "none")}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a project">
