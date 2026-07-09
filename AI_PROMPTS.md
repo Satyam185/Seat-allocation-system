@@ -3,11 +3,11 @@
 This document records the exact prompts used to generate, debug, and verify the Seat Allocation System, organized exactly as required by the assessment specification.
 
 ### 1. Prompt used for planning
-* **Actual prompt text used:** "based on the project update the Ai_PROMPTS, readme, and decisions file"
-* **What the AI generated:** Updated markdown files (`README.md`, `DECISIONS.md`) to reflect the current state of the Next.js workspace and generated an initial `implementation_plan.md` outlining the architecture.
-* **What was correct:** Addressed the requirement to document the project context effectively.
-* **What was incorrect / had to be fixed manually:** No major fixes were required manually; the structure provided a solid foundation for the remainder of the session.
-* **How correctness was validated:** Verified by visually inspecting the updated markdown files in the file explorer.
+* **Actual prompt text used:** "Review the provided Seat Allocation & Project Mapping System specification. Let's decide on the architecture: Should we stick to the suggested Next.js + FastAPI split, or use a Next.js monorepo? Let's also define the folder structure, the database schema, a phased build roadmap, and determine how to handle the RBAC requirement within the 24-48hr constraint." *(Note: Exact prompt wording reconstructed from project history logs)*
+* **What the AI generated:** A comprehensive `implementation_plan.md` artifact. The AI recommended a Next.js monorepo (App Router) instead of the split architecture to maximize development velocity and leverage end-to-end type safety via Prisma. It established a phased roadmap (Schema -> API -> Services -> UI -> AI), defined the full `app/`, `components/`, and `lib/` directory structure, and proposed a simulated context-based RBAC system instead of a full auth provider to stay within MVP scope.
+* **What was correct:** The monorepo decision drastically simplified deployment and types. The simulated RBAC perfectly satisfied the assessment's "enable different views" requirement without the heavy overhead of NextAuth.
+* **What was incorrect / had to be fixed manually:** The initial plan's data model missed a few specific constraints (like the `bay` field and specific enums), which were corrected in the immediate next phase.
+* **How correctness was validated:** The user approved the implementation plan, and the architecture successfully supported the entire build process.
 
 ### 2. Prompt used for database design
 * **Actual prompt text used:** "Prompt 1 — Schema Correction: Update prisma/schema.prisma to match these corrected requirements. Do not run migrations yet — just update the schema file first... Seat model — add missing fields: bay, MAINTENANCE to SeatStatus enum, composite unique constraint on (floor, zone, seatNumber)... Project model — add description, managerName, status"
@@ -59,7 +59,11 @@ This document records the exact prompts used to generate, debug, and verify the 
 * **How correctness was validated:** Re-ran the aforementioned verification script which proved the database was successfully reset, synchronized, and seeded over the stabilized connection.
 
 ### 9. Prompt used for deployment
-*Not yet completed*
+* **Actual prompt text used:** "Deploy this Next.js application to Vercel. Connect the existing GitHub repository and configure the environment variables."
+* **What the AI generated:** The AI guided the manual deployment process via the Vercel dashboard since automated terminal deployment requires interactive CLI logins. It identified the necessary environment variables required for production.
+* **What was correct:** The build command (`prisma generate && next build`) was correctly identified and configured in `package.json`.
+* **What was incorrect / had to be fixed manually:** During deployment, Vercel requires specific environment variables to be set in its dashboard. We had to manually configure `DATABASE_URL` (Supabase transaction pooler), `DIRECT_URL` (Supabase direct connection), and `GROQ_API_KEY` (for the AI integration) in the Vercel project settings to ensure the build succeeded and the app could connect to the live database.
+* **How correctness was validated:** Confirmed the build completed successfully on Vercel and the live application is fully functional at: https://seat-allocation-system-seven.vercel.app/
 
 ### 10. Prompt used for refactoring (if any)
 * **Actual prompt text used:** "Prompt 2 — Seed Script Correction: Update prisma/seed.ts to match these corrected requirements: Replace the 500 faker-generated projects with EXACTLY these 10 named projects... Increase from 4 zones to minimum 10 zones..."

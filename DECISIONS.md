@@ -22,22 +22,29 @@
 
 ## Data Model
 - **1 employee = 1 seat** (1:1 relation). No shared/hot-desking model.
-- `AllocationHistory` is a separate append-only table (not just current state
-  on `Seat`/`Employee`) specifically to support utilization metrics and
-  historical reporting on the dashboard.
-- Employees may exist without a seat (e.g., new joiners, remote) and without
-  a project (bench/unassigned) — both fields are optional.
+- `Seat` model includes a `bay` field, `MAINTENANCE` in the `SeatStatus` enum, and enforces a composite unique constraint on `(floor, zone, seatNumber)`.
+- `Project` model includes `managerName`, `description`, and `status`.
+- `seat_allocations` is a separate append-only table specifically to support utilization metrics and historical reporting. It tracks `allocationStatus` ("ACTIVE" or "RELEASED") and `releasedDate`.
+- Employees may exist without a seat (e.g., new joiners, remote) and without a project (bench/unassigned) — both fields are optional.
 
 ## Seed Data
-- 5,000 employees, 500 projects, 6,000 seats generated via `@faker-js/faker`
-  with a fixed seed (`faker.seed(42)`) for reproducibility.
-- ~90% of employees are seeded with an active seat assignment; the remainder
-  are intentionally left unseated to exercise empty/edge states (new joiner
-  flow, unassigned filters).
-- ~85% of employees are seeded with a project assignment; ~15% are bench/unassigned.
+- 5,000 employees, 10 named projects (Indigo, Indreed, Mydreed, Preed, Serfy, Oreed, bedegreed, Opreed, Serry, Kaary), and 6,000 seats distributed across 10 zones (A-J) generated via `@faker-js/faker` with a fixed seed (`faker.seed(42)`) for reproducibility.
+- Seat Status breakdown: 4,500 OCCUPIED, 1,350 AVAILABLE, 100 RESERVED, 50 MAINTENANCE.
+- Unseated employees: exactly 500 (intentionally left unseated to exercise new joiner flows and unassigned filters).
 
 ## Deployment
 - Target: Vercel (frontend + API routes), Supabase (PostgreSQL).
+- Live URL: https://seat-allocation-system-seven.vercel.app/
+
+## Business Rules Implementation
+- **Allocation Rules:** 1-employee-1-seat and 1-seat-1-employee are strictly enforced via the `SeatService` layer and database constraints.
+- **Seat Status Lock:** Reserved or Maintenance seats cannot be allocated. They require an explicit status change before they become Available for allocation.
+- **Seat Suggestions:** New joiner allocation logic utilizes proximity-based matching, prioritizing seats in the same zone as the employee's project, with fallback to any available seat.
+- **Releases:** Releasing a seat returns it to `AVAILABLE` status. The corresponding `seat_allocations` record is updated with a `releasedDate` and `allocationStatus` = "RELEASED" rather than being deleted, preserving history.
+
+## Known Deviations
+- **Migrations vs. Push:** `npx prisma db push --force-reset` was used instead of `prisma migrate dev`. This was due to persistent Supabase connection pooler timeouts in a headless/non-interactive environment, which caused standard migrations to hang. The `prisma/migrations/` history is therefore sparse; `schema.prisma` is the authoritative source.
+- **Seed Chunking:** The seed script uses a chunked insert approach (batches of 500 records) to avoid those same pooler timeout issues during bulk inserts.
 
 ## UI / UX
 - **MVP Aesthetics:** The application uses a generic, functional UI (shadcn/ui defaults, minimal custom styling) to prioritize speed and functional completeness. A comprehensive navy + coral redesign was attempted but intentionally reverted to maintain simplicity and adhere to preferences.
