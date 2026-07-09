@@ -38,3 +38,7 @@
 
 ## Deployment
 - Target: Vercel (frontend + API routes), Supabase (PostgreSQL).
+
+## UI / UX
+- **MVP Aesthetics:** The application uses a generic, functional UI (shadcn/ui defaults, minimal custom styling) to prioritize speed and functional completeness. A comprehensive navy + coral redesign was attempted but intentionally reverted to maintain simplicity and adhere to preferences.
+- **Select Component Hydration Issue:** Encountered an issue where shadcn `SelectItem` displayed garbage values when passed an object or React node as `children` in certain Next.js setups; solved by explicitly passing a concatenated string (e.g. `` `${project.code} - ${project.name}` ``).

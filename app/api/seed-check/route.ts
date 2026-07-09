@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
       prisma.employee.count(),
       prisma.project.count(),
       prisma.seat.count(),
-      prisma.allocationHistory.count(),
+      prisma.seatAllocation.count(),
     ]);
 
     return NextResponse.json({

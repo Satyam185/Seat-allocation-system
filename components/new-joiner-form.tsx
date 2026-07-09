@@ -132,7 +132,7 @@ export function NewJoinerForm({ onSuccess }: NewJoinerFormProps) {
           name: form.name,
           email: form.email,
           department: form.department,
-          designation: form.designation,
+          role: form.designation,
         };
         if (form.projectId) body.projectId = form.projectId;
 

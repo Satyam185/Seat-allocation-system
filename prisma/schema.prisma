@@ -4,13 +4,13 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  
 }
 
 enum SeatStatus {
   AVAILABLE
   OCCUPIED
   RESERVED
+  MAINTENANCE
 }
 
 enum EmployeeStatus {
@@ -24,7 +24,7 @@ model Employee {
   name         String
   email        String         @unique
   department   String
-  designation  String
+  role         String
   status       EmployeeStatus @default(ACTIVE)
   joinDate     DateTime       @default(now())
 
@@ -33,18 +33,24 @@ model Employee {
 
   seat         Seat?
 
-  allocations  AllocationHistory[]
+  allocations  SeatAllocation[]
 
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 }
 
 model Project {
-  id        String     @id @default(cuid())
-  name      String
-  code      String     @unique
-  employees Employee[]
-  createdAt DateTime   @default(now())
+  id          String     @id @default(cuid())
+  name        String
+  code        String     @unique
+  description String?
+  managerName String
+  status      String     @default("ACTIVE")
+  employees   Employee[]
+  
+  allocations SeatAllocation[]
+
+  createdAt   DateTime   @default(now())
 }
 
 model Seat {
@@ -52,24 +58,35 @@ model Seat {
   seatCode   String     @unique
   floor      Int
   zone       String
+  bay        String
+  seatNumber String
   status     SeatStatus @default(AVAILABLE)
 
   employeeId String?    @unique
   employee   Employee?  @relation(fields: [employeeId], references: [id])
 
-  allocations AllocationHistory[]
+  allocations SeatAllocation[]
 
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
+
+  @@unique([floor, zone, seatNumber])
 }
 
-model AllocationHistory {
-  id         String   @id @default(cuid())
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
-  seatId     String
-  seat       Seat     @relation(fields: [seatId], references: [id])
-  action     String   // "ASSIGNED" | "RELEASED"
-  notes      String?
-  createdAt  DateTime @default(now())
+model SeatAllocation {
+  id               String    @id @default(cuid())
+  employeeId       String
+  employee         Employee  @relation(fields: [employeeId], references: [id])
+  seatId           String
+  seat             Seat      @relation(fields: [seatId], references: [id])
+  projectId        String?
+  project          Project?  @relation(fields: [projectId], references: [id])
+  
+  allocationStatus String    // "ACTIVE" | "RELEASED"
+  notes            String?
+  releasedDate     DateTime?
+  
+  createdAt        DateTime  @default(now())
+
+  @@map("seat_allocations")
 }

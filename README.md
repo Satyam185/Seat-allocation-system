@@ -53,7 +53,7 @@ Resources: `employees/`, `seats/`, `projects/`, `analytics/`, `ai/`, `seed-check
 ### `components/`
 - `ui/` — shadcn/ui primitives (`button`, `table`, `select`, `card` installed; add more via `npx shadcn@latest add <component>` as needed — **use shadcn components for all UI elements, don't hand-roll basic inputs/buttons/tables**)
 - `role-provider.tsx` / `role-switcher.tsx` — fake RBAC system (no real auth). Wrap conditional UI in `const { role } = useRole()` checks to show/hide actions per role (ADMIN, HR, EMPLOYEE, PROJECT_LEAD).
-- `search-filters.tsx`, `seat-table.tsx`, `utilization-chart.tsx`, `new-joiner-form.tsx` — currently empty stubs, main UI build-out work
+- `search-filters.tsx`, `seat-table.tsx`, `utilization-chart.tsx`, `new-joiner-form.tsx` — Functional UI components handling search, assignment flows, and metrics rendering.
 
 ### Root files
 - `DECISIONS.md` — documented assumptions and trade-offs (no real auth, 1:1 employee-seat, monorepo choice). Read this before assuming a requirement was missed — it may be an intentional scope decision.

@@ -95,7 +95,7 @@ export class EmployeeService {
         name: data.name,
         email: data.email,
         department: data.department,
-        designation: data.designation,
+        role: data.role,
         projectId: data.projectId || null,
       },
       include: {
@@ -118,33 +118,40 @@ export class EmployeeService {
     });
   }
 
+  static async deactivateEmployee(id: string) {
+    return prisma.employee.update({
+      where: { id },
+      data: {
+        status: EmployeeStatus.INACTIVE,
+      },
+      include: {
+        project: true,
+        seat: true,
+      },
+    });
+  }
+
   static async deleteEmployee(id: string) {
-    // Before deleting the employee, we need to handle their seat.
-    // If they have a seat assigned, set it to AVAILABLE and clear employeeId.
+    // Before deleting the employee, we need to handle their seat and allocations.
     const employee = await prisma.employee.findUnique({
       where: { id },
       include: { seat: true },
     });
 
     if (employee?.seat) {
-      await prisma.$transaction([
-        prisma.seat.update({
-          where: { id: employee.seat.id },
-          data: {
-            employeeId: null,
-            status: "AVAILABLE",
-          },
-        }),
-        prisma.allocationHistory.create({
-          data: {
-            employeeId: id,
-            seatId: employee.seat.id,
-            action: "RELEASED",
-            notes: "Seat released due to employee deletion",
-          },
-        }),
-      ]);
+      await prisma.seat.update({
+        where: { id: employee.seat.id },
+        data: {
+          employeeId: null,
+          status: "AVAILABLE",
+        },
+      });
     }
+
+    // Delete all seat allocations for this employee to avoid foreign key constraints
+    await prisma.seatAllocation.deleteMany({
+      where: { employeeId: id },
+    });
 
     return prisma.employee.delete({
       where: { id },

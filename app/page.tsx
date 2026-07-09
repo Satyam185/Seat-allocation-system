@@ -34,7 +34,6 @@ export default function DashboardPage() {
 
   const handleReleaseSeat = useCallback(
     async (employeeId: string, seatId: string) => {
-      if (!confirm("Release this seat?")) return;
       await fetch(`/api/seats/${seatId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

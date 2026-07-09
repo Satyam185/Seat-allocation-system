@@ -64,6 +64,9 @@ export class ProjectService {
       data: {
         name: data.name,
         code: data.code,
+        description: data.description,
+        managerName: data.managerName,
+        status: data.status,
       },
     });
   }
@@ -73,6 +76,15 @@ export class ProjectService {
       where: { id },
       data: {
         ...data,
+      },
+    });
+  }
+
+  static async getProjectEmployees(projectId: string) {
+    return prisma.employee.findMany({
+      where: { projectId },
+      include: {
+        seat: true,
       },
     });
   }

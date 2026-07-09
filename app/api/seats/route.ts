@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assignSeatSchema } from "@/lib/validations/seat.schema";
+import { createSeatSchema } from "@/lib/validations/seat.schema";
 import { SeatService } from "@/lib/services/seat.service";
 
 export async function GET(req: NextRequest) {
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const parsed = assignSeatSchema.safeParse(body);
+    const parsed = createSeatSchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -49,20 +49,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { seatId, employeeId } = parsed.data;
-    const updatedSeat = await SeatService.assignSeat(employeeId, seatId);
+    const newSeat = await SeatService.createSeat(parsed.data);
 
-    return NextResponse.json({ data: updatedSeat }, { status: 201 });
+    return NextResponse.json({ data: newSeat }, { status: 201 });
   } catch (error: any) {
     console.error("POST /api/seats error:", error);
-    if (error.status === 409) {
+    if (error.code === "P2002") {
       return NextResponse.json(
-        { error: error.message },
+        { error: "Seat code or composite key already exists" },
         { status: 409 }
       );
     }
     return NextResponse.json(
-      { error: error.message || "Failed to assign seat" },
+      { error: error.message || "Failed to create seat" },
       { status: 500 }
     );
   }

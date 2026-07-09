@@ -15,14 +15,10 @@ export async function POST(req: NextRequest) {
     }
 
     const { query } = parsed.data;
-    const result = await AiService.parseAndQuery(query);
-
-    return NextResponse.json({ data: result });
+    const result = await AiService.processQuery(query);
+    return NextResponse.json(result, { status: 200 });
   } catch (error: any) {
-    console.error("POST /api/ai error:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to process AI query" },
-      { status: 500 }
-    );
+    console.error("POST /api/ai/query error:", error);
+    return NextResponse.json({ error: "Failed to process AI query" }, { status: 500 });
   }
 }

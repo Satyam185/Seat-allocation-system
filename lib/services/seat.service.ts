@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { SeatStatus } from "@prisma/client";
+import { CreateSeatInput } from "@/lib/validations/seat.schema";
 
 export class SeatService {
   static async getSeats(params: {
@@ -36,10 +37,29 @@ export class SeatService {
       prisma.seat.count({ where }),
     ]);
 
-    return {
-      seats,
-      total,
-    };
+    return { seats, total };
+  }
+
+  static async getAvailableSeats(params: {
+    page: number;
+    limit: number;
+  }) {
+    const skip = (params.page - 1) * params.limit;
+    const take = params.limit;
+
+    const where = { status: SeatStatus.AVAILABLE };
+
+    const [seats, total] = await Promise.all([
+      prisma.seat.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { seatCode: "asc" },
+      }),
+      prisma.seat.count({ where }),
+    ]);
+
+    return { seats, total };
   }
 
   static async getSeatById(id: string) {
@@ -51,14 +71,35 @@ export class SeatService {
     });
   }
 
-  static async assignSeat(employeeId: string, seatId: string, notes?: string) {
+  static async createSeat(data: CreateSeatInput) {
+    return prisma.seat.create({
+      data: {
+        seatCode: data.seatCode,
+        floor: data.floor,
+        zone: data.zone,
+        bay: data.bay,
+        seatNumber: data.seatNumber,
+        status: data.status || SeatStatus.AVAILABLE,
+      },
+    });
+  }
+
+  static async allocateSeat(employeeId: string, seatId: string) {
     // 1. Fetch employee and check if employee exists
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
       include: { seat: true },
     });
     if (!employee) {
-      throw new Error("Employee not found");
+      const error: any = new Error("Employee not found");
+      error.status = 404;
+      throw error;
+    }
+
+    if (employee.seat) {
+      const error: any = new Error("Employee already has an active seat allocation");
+      error.status = 409;
+      throw error;
     }
 
     // 2. Fetch target seat and check availability
@@ -66,39 +107,28 @@ export class SeatService {
       where: { id: seatId },
     });
     if (!targetSeat) {
-      throw new Error("Seat not found");
+      const error: any = new Error("Seat not found");
+      error.status = 404;
+      throw error;
     }
 
-    // If seat is occupied by another employee
-    if (targetSeat.employeeId && targetSeat.employeeId !== employeeId) {
-      const error: any = new Error("Seat already occupied");
+    // 3. Check seat status
+    if (targetSeat.status === SeatStatus.OCCUPIED) {
+      const error: any = new Error("Seat is already OCCUPIED");
       error.status = 409;
       throw error;
     }
 
-    if (employee.seat && employee.seat.id === seatId) {
-      // Already assigned to this exact seat, nothing to do
-      return employee.seat;
+    if (targetSeat.status === SeatStatus.RESERVED) {
+      const error: any = new Error("Seat is RESERVED and cannot be allocated directly. Change status to AVAILABLE first.");
+      error.status = 409;
+      throw error;
     }
 
-    // 3. Auto-release previous seat if employee has one (done sequentially)
-    if (employee.seat) {
-      await prisma.seat.update({
-        where: { id: employee.seat.id },
-        data: {
-          employeeId: null,
-          status: SeatStatus.AVAILABLE,
-        },
-      });
-
-      await prisma.allocationHistory.create({
-        data: {
-          employeeId,
-          seatId: employee.seat.id,
-          action: "RELEASED",
-          notes: `Auto-released during reassignment to seat ${targetSeat.seatCode}`,
-        },
-      });
+    if (targetSeat.status === SeatStatus.MAINTENANCE) {
+      const error: any = new Error("Seat is under MAINTENANCE");
+      error.status = 409;
+      throw error;
     }
 
     // 4. Update target seat to OCCUPIED and assign employee
@@ -110,34 +140,55 @@ export class SeatService {
       },
     });
 
-    await prisma.allocationHistory.create({
+    await prisma.seatAllocation.create({
       data: {
         employeeId,
         seatId,
-        action: "ASSIGNED",
-        notes: notes || "Assigned via SeatService",
+        projectId: employee.projectId,
+        allocationStatus: "ACTIVE",
+        notes: "Assigned via SeatService",
       },
     });
 
     return updatedSeat;
   }
 
-  static async releaseSeat(seatId: string, notes?: string) {
+  static async releaseSeat(seatId: string) {
     const seat = await prisma.seat.findUnique({
       where: { id: seatId },
     });
 
     if (!seat) {
-      throw new Error("Seat not found");
+      const error: any = new Error("Seat not found");
+      error.status = 404;
+      throw error;
     }
 
-    if (!seat.employeeId) {
-      // Seat already available, just return it
-      return seat;
+    // Find the seat's current active seat_allocations record
+    const activeAllocation = await prisma.seatAllocation.findFirst({
+      where: {
+        seatId,
+        allocationStatus: "ACTIVE",
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!activeAllocation) {
+      const error: any = new Error("Seat has no active allocation to release");
+      error.status = 404;
+      throw error;
     }
 
-    const employeeId = seat.employeeId;
+    // Update the seat_allocations record
+    await prisma.seatAllocation.update({
+      where: { id: activeAllocation.id },
+      data: {
+        allocationStatus: "RELEASED",
+        releasedDate: new Date(),
+      },
+    });
 
+    // Set seat.status = AVAILABLE, clear seat.employeeId
     const updatedSeat = await prisma.seat.update({
       where: { id: seatId },
       data: {
@@ -146,20 +197,10 @@ export class SeatService {
       },
     });
 
-    await prisma.allocationHistory.create({
-      data: {
-        employeeId,
-        seatId,
-        action: "RELEASED",
-        notes: notes || "Released via SeatService",
-      },
-    });
-
     return updatedSeat;
   }
 
-  static async allocateNewJoiner(employeeId: string) {
-    // 1. Fetch employee details
+  static async suggestSeatForEmployee(employeeId: string) {
     const employee = await prisma.employee.findUnique({
       where: { id: employeeId },
       include: { project: true },
@@ -169,92 +210,126 @@ export class SeatService {
       throw new Error("Employee not found");
     }
 
-    let targetFloor: number | null = null;
-    let targetZone: string | null = null;
+    let preferredZones: string[] = [];
 
-    // 2. Try to suggest seat based on project team
+    // Get employee's assigned project and query seat_allocations
     if (employee.projectId) {
-      const teammates = await prisma.employee.findMany({
+      // Find active allocations for other employees in the same project
+      const allocations = await prisma.seatAllocation.findMany({
         where: {
           projectId: employee.projectId,
-          id: { not: employeeId },
-          seat: { isNot: null },
+          allocationStatus: "ACTIVE",
+          employeeId: { not: employeeId },
         },
-        include: { seat: true },
+        include: {
+          seat: true,
+        },
       });
 
-      if (teammates.length > 0) {
-        // Find most common floor and zone
-        const floorCounts: Record<number, number> = {};
+      if (allocations.length > 0) {
         const zoneCounts: Record<string, number> = {};
-
-        teammates.forEach((tm) => {
-          if (tm.seat) {
-            floorCounts[tm.seat.floor] = (floorCounts[tm.seat.floor] || 0) + 1;
-            zoneCounts[tm.seat.zone] = (zoneCounts[tm.seat.zone] || 0) + 1;
+        allocations.forEach((alloc) => {
+          if (alloc.seat) {
+            zoneCounts[alloc.seat.zone] = (zoneCounts[alloc.seat.zone] || 0) + 1;
           }
         });
 
-        // Determine top floor
-        let maxFloorCount = 0;
-        for (const [floorStr, count] of Object.entries(floorCounts)) {
-          const floorNum = parseInt(floorStr, 10);
-          if (count > maxFloorCount) {
-            maxFloorCount = count;
-            targetFloor = floorNum;
-          }
-        }
-
-        // Determine top zone
-        let maxZoneCount = 0;
-        for (const [zone, count] of Object.entries(zoneCounts)) {
-          if (count > maxZoneCount) {
-            maxZoneCount = count;
-            targetZone = zone;
-          }
-        }
+        // Sort zones by count descending
+        preferredZones = Object.entries(zoneCounts)
+          .sort((a, b) => b[1] - a[1])
+          .map((entry) => entry[0]);
       }
     }
 
-    // 3. Find available seats using preferences (if any) or fallback
-    let suggestedSeat = null;
+    let selectedSeat = null;
+    let usedZone = null;
+    let isPreferredZone = false;
+    let fallbackMessage = "";
 
-    if (targetFloor !== null && targetZone !== null) {
-      // First try: exact match floor and zone
-      suggestedSeat = await prisma.seat.findFirst({
+    // 1. Try to find an available seat in the preferred zones
+    for (const zone of preferredZones) {
+      selectedSeat = await prisma.seat.findFirst({
         where: {
           status: SeatStatus.AVAILABLE,
-          floor: targetFloor,
-          zone: targetZone,
+          zone,
           employeeId: null,
         },
         orderBy: { seatCode: "asc" },
       });
+
+      if (selectedSeat) {
+        usedZone = zone;
+        isPreferredZone = true;
+        break;
+      }
     }
 
-    if (!suggestedSeat && targetFloor !== null) {
-      // Second try: same floor, any zone
-      suggestedSeat = await prisma.seat.findFirst({
-        where: {
-          status: SeatStatus.AVAILABLE,
-          floor: targetFloor,
-          employeeId: null,
-        },
-        orderBy: { seatCode: "asc" },
-      });
-    }
-
-    if (!suggestedSeat) {
-      // Third try: any available seat in the building
-      suggestedSeat = await prisma.seat.findFirst({
+    // 2. Fallback to any available seat
+    if (!selectedSeat) {
+      selectedSeat = await prisma.seat.findFirst({
         where: {
           status: SeatStatus.AVAILABLE,
           employeeId: null,
         },
         orderBy: [{ floor: "asc" }, { zone: "asc" }, { seatCode: "asc" }],
       });
+
+      if (selectedSeat) {
+        usedZone = selectedSeat.zone;
+        isPreferredZone = false;
+        if (preferredZones.length > 0) {
+          fallbackMessage = `No seats available in preferred zone(s) [${preferredZones.join(", ")}], allocated in Zone ${usedZone} instead.`;
+        } else {
+          fallbackMessage = "No preferred zone could be determined, allocated fallback seat.";
+        }
+      }
     }
 
-    return suggestedSeat;
+    if (!selectedSeat) {
+      const error: any = new Error("No available seats found in the entire building.");
+      error.status = 404;
+      throw error;
+    }
+
+    // Removed automatic allocation so this function only suggests a seat
+
+    return {
+      seat: selectedSeat,
+      usedZone,
+      isPreferredZone,
+      message: isPreferredZone ? `Allocated in preferred Zone ${usedZone}` : fallbackMessage,
+    };
+  }
+
+  static async changeSeatStatus(seatId: string, newStatus: string) {
+    if (newStatus === "OCCUPIED") {
+      const error: any = new Error("Cannot change status to OCCUPIED directly. Use allocate flow.");
+      error.status = 400;
+      throw error;
+    }
+
+    const seat = await prisma.seat.findUnique({
+      where: { id: seatId },
+    });
+
+    if (!seat) {
+      const error: any = new Error("Seat not found");
+      error.status = 404;
+      throw error;
+    }
+
+    // Do not allow changing status if seat is actively occupied by an employee (except maybe to maintenance, but let's be safe)
+    if (seat.employeeId) {
+       const error: any = new Error("Cannot change status of a seat currently allocated to an employee. Release it first.");
+       error.status = 409;
+       throw error;
+    }
+
+    return prisma.seat.update({
+      where: { id: seatId },
+      data: {
+        status: newStatus as SeatStatus,
+      },
+    });
   }
 }

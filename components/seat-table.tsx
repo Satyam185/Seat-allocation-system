@@ -76,17 +76,22 @@ const fetcher = async (url: string) => {
   if (url.includes("/api/ai")) {
     const { searchParams } = new URL(url, window.location.origin);
     const query = searchParams.get("query") || "";
-    const res = await fetch("/api/ai", {
+    const res = await fetch("/api/ai/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
     });
     if (!res.ok) {
+      // Check if it's returning HTML
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text/html")) {
+        throw new Error("API endpoint returned HTML instead of JSON. Ensure the route exists.");
+      }
       const err = await res.json();
       throw new Error(err.error || "AI query failed");
     }
     const json = await res.json();
-    return json.data; // { filter, data, total }
+    return json; // { answer, data, filter, total }
   }
   const res = await fetch(url);
   if (!res.ok) {
@@ -101,7 +106,7 @@ function buildUrl(page: number, filters: SeatTableProps["filters"]) {
     const params = new URLSearchParams({
       query: filters.aiQuery,
     });
-    return `/api/ai?${params}`;
+    return `/api/ai/query?${params}`;
   }
 
   const params = new URLSearchParams({
@@ -238,16 +243,17 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
 
     // Query suggestion endpoint
     try {
-      const res = await fetch(`/api/seats/${emp.id}`, {
-        method: "PATCH",
+      const res = await fetch(`/api/seats/suggest`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "suggest", employeeId: emp.id }),
+        body: JSON.stringify({ employeeId: emp.id }),
       });
       if (res.ok) {
         const json = await res.json();
-        setSuggestedSeat(json.data);
-        if (json.data?.id) {
-          setSelectedSeatId(json.data.id);
+        const suggested = json.data?.seat || json.data;
+        setSuggestedSeat(suggested);
+        if (suggested?.id) {
+          setSelectedSeatId(suggested.id);
         }
       }
     } catch (err) {
@@ -264,7 +270,7 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
     setModalError("");
 
     try {
-      const res = await fetch("/api/seats", {
+      const res = await fetch("/api/seats/allocate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -285,6 +291,34 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
       setModalError(err.message || "An error occurred during assignment.");
     } finally {
       setIsSubmitPending(false);
+    }
+  };
+
+  const handleStatusChange = async (emp: any, newStatus: string) => {
+    try {
+      const res = await fetch(`/api/employees/${emp.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error("Failed to update status");
+      mutate();
+      onSuccess?.();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleRemoveEmployee = async (emp: any) => {
+    try {
+      const res = await fetch(`/api/employees/${emp.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to remove employee");
+      mutate();
+      onSuccess?.();
+    } catch (err: any) {
+      alert(err.message);
     }
   };
 
@@ -323,7 +357,7 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
 
     try {
       const res = await fetch(`/api/employees/${assigningProjectEmp.id}`, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId: selectedProjectId === "none" ? null : selectedProjectId,
@@ -348,13 +382,12 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
   const handleRelease = useCallback(
     async (emp: any) => {
       if (!emp.seat) return;
-      if (!confirm(`Release seat ${emp.seat.seatCode} assigned to ${emp.name}?`)) return;
 
       try {
-        const res = await fetch(`/api/seats/${emp.seat.id}`, {
-          method: "PATCH",
+        const res = await fetch(`/api/seats/release`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "release" }),
+          body: JSON.stringify({ seatId: emp.seat.id }),
         });
 
         if (!res.ok) {
@@ -432,6 +465,12 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
 
   return (
     <div className="space-y-3">
+      {isAiQuery && data?.answer && (
+        <div className="flex items-center gap-2 rounded-md border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-primary">
+          <Sparkles className="size-4 shrink-0 text-primary" />
+          <span>{data.answer}</span>
+        </div>
+      )}
       {isAiQuery && data?.filter && (
         <div className="flex items-center gap-2 rounded-md border border-primary/10 bg-primary/5 px-3 py-2 text-xs text-primary">
           <AlertCircle className="size-4 shrink-0" />
@@ -524,7 +563,22 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
                       <SeatStatusBadge status={emp.seat?.status ?? "AVAILABLE"} />
                     </TableCell>
                     <TableCell>
-                      <EmployeeStatusBadge status={emp.status} />
+                      {canEdit && isRealEmployee ? (
+                        <Select
+                          value={emp.status}
+                          onValueChange={(val) => handleStatusChange(emp, val)}
+                        >
+                          <SelectTrigger className="h-7 text-xs px-2 w-[100px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ACTIVE">Active</SelectItem>
+                            <SelectItem value="INACTIVE">Inactive</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <EmployeeStatusBadge status={emp.status} />
+                      )}
                     </TableCell>
                     {canEdit && (
                       <TableCell className="text-right">
@@ -557,6 +611,14 @@ export function SeatTable({ filters, onSuccess }: SeatTableProps) {
                               onClick={() => handleStartProjectAssign(emp)}
                             >
                               {emp.project ? "Change Project" : "Assign Project"}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => handleRemoveEmployee(emp)}
+                            >
+                              Remove
                             </Button>
                           </div>
                         )}
